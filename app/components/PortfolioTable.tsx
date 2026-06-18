@@ -7,14 +7,14 @@ const HORIZONS = ["1M", "3M", "1Y", "3Y"] as const;
 
 // ---- Formatierung -----------------------------------------------------------
 
-const NA = <span className="text-stone-400">NA</span>;
+const NA = <span className="text-stone-600">NA</span>;
 
 function chf(v: number | null) {
   if (v == null) return NA;
   return <>{new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 }).format(v)}</>;
 }
 
-function num2(v: number | null, suf = "") {
+function num2(v: number | null) {
   if (v == null) return NA;
   return (
     <>
@@ -22,7 +22,6 @@ function num2(v: number | null, suf = "") {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }).format(v)}
-      {suf}
     </>
   );
 }
@@ -33,8 +32,18 @@ function pct(v: number | null) {
 }
 
 function signClass(v: number | null) {
-  if (v == null) return "text-stone-400";
-  return v >= 0 ? "text-emerald-700" : "text-red-700";
+  if (v == null) return "text-stone-600";
+  return v >= 0 ? "text-emerald-400" : "text-red-400";
+}
+
+// KGV-Farbe: <10 bright-green, 10–15 emerald, 15–20 stone, 20–30 amber, >30 red
+function peClass(pe: number | null): string {
+  if (pe == null) return "text-stone-600";
+  if (pe < 10)  return "text-emerald-300 font-semibold";
+  if (pe < 15)  return "text-emerald-400";
+  if (pe < 20)  return "text-stone-300";
+  if (pe < 30)  return "text-amber-400";
+  return "text-red-400";
 }
 
 // ---- Sub-components ---------------------------------------------------------
@@ -48,30 +57,22 @@ function Th({ children, left = false }: { children?: React.ReactNode; left?: boo
 }
 
 function Metric({
-  label,
-  value,
-  sub,
-  valueClass,
+  label, value, sub, valueClass,
 }: {
-  label: string;
-  value: string;
-  sub?: string;
-  valueClass?: string;
+  label: string; value: string; sub?: string; valueClass?: string;
 }) {
   return (
     <div className="text-right">
-      <div className="text-[11px] text-stone-500">{label}</div>
-      <div className={`text-base font-semibold tabular-nums ${valueClass ?? ""}`}>{value}</div>
-      {sub && <div className="text-[11px] text-stone-400">{sub}</div>}
+      <div className="text-[11px] text-stone-500 uppercase tracking-wider">{label}</div>
+      <div className={`text-base font-semibold tabular-nums ${valueClass ?? "text-stone-100"}`}>{value}</div>
+      {sub && <div className="text-[11px] text-stone-500">{sub}</div>}
     </div>
   );
 }
 
 function PerfCellTd({ cell }: { cell: PerfCell | null }) {
   if (!cell)
-    return (
-      <td className="px-2 py-2 text-right tabular-nums text-stone-400">NA</td>
-    );
+    return <td className="px-2 py-2 text-right tabular-nums text-stone-600">NA</td>;
   return (
     <td className="px-2 py-2 text-right tabular-nums">
       <div className={signClass(cell.pct) + " font-medium"}>{pct(cell.pct)}</div>
@@ -85,38 +86,36 @@ function PerfCellTd({ cell }: { cell: PerfCell | null }) {
 
 function RowTr({ r }: { r: PortfolioRow }) {
   return (
-    <tr className="border-b border-stone-100 hover:bg-stone-50">
+    <tr className="border-b border-stone-800 hover:bg-stone-800/50 transition-colors">
       <td className="px-2 py-2">
-        <div className="font-semibold">{r.ticker}</div>
+        <div className="font-semibold text-stone-100">{r.ticker}</div>
         <div className="text-[11px] text-stone-500">{r.name}</div>
-        {r.error && <div className="text-[11px] text-red-600">Fehler: {r.error}</div>}
+        {r.error && <div className="text-[11px] text-red-400">Fehler: {r.error}</div>}
       </td>
-      <td className="px-2 py-2 text-right tabular-nums">{r.quantity}</td>
+      <td className="px-2 py-2 text-right tabular-nums text-stone-400">{r.quantity}</td>
       <td className="px-2 py-2 text-right tabular-nums">
-        <div>
+        <div className="text-stone-200">
           {num2(r.price?.value ?? null)}{" "}
-          <span className="text-stone-400">{r.currency}</span>
+          <span className="text-stone-600">{r.currency}</span>
         </div>
-        <div className="text-[11px] text-stone-400">{r.price?.asOf}</div>
+        <div className="text-[11px] text-stone-600">{r.price?.asOf}</div>
       </td>
-      <td className="px-2 py-2 text-right tabular-nums font-medium">{chf(r.valueCHF)}</td>
-      <td className="px-2 py-2 text-right tabular-nums">
+      <td className="px-2 py-2 text-right tabular-nums font-semibold text-stone-100">
+        {chf(r.valueCHF)}
+      </td>
+      <td className={`px-2 py-2 text-right tabular-nums ${peClass(r.pe)}`}>
         {r.pe == null ? NA : r.pe.toFixed(1)}
       </td>
-      <td className="px-2 py-2 text-right tabular-nums">
+      <td className="px-2 py-2 text-right tabular-nums text-stone-300">
         {r.roic == null ? NA : r.roic.toFixed(1) + "%"}
       </td>
       <td className="px-2 py-2 text-right tabular-nums">
-        <div>{r.dividendYield == null ? NA : r.dividendYield.toFixed(2) + "%"}</div>
-        <div className="text-[11px] text-stone-500">
-          {r.dividendCHF == null
-            ? ""
-            : new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 }).format(r.dividendCHF)}
+        <div className="text-stone-300">{r.dividendYield == null ? NA : r.dividendYield.toFixed(2) + "%"}</div>
+        <div className="text-[11px] text-stone-600">
+          {r.dividendCHF == null ? "" : new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 }).format(r.dividendCHF)}
         </div>
       </td>
-      {HORIZONS.map((h) => (
-        <PerfCellTd key={h} cell={r.perf[h] ?? null} />
-      ))}
+      {HORIZONS.map((h) => <PerfCellTd key={h} cell={r.perf[h] ?? null} />)}
     </tr>
   );
 }
@@ -140,25 +139,23 @@ export default function PortfolioTable() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const totals = data?.totals;
   const rows   = data?.rows ?? [];
   const source = data?.source;
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900 font-mono">
+    <div className="min-h-screen bg-stone-950 text-stone-300 font-mono">
       <div className="mx-auto max-w-7xl px-4 py-6">
 
         {/* Kopfzeile */}
-        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-stone-300 pb-4">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-stone-800 pb-4">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-stone-600">
               Portfolio Monitor · CHF
             </div>
-            <div className="mt-1 text-3xl font-semibold tabular-nums">
+            <div className="mt-1 text-3xl font-semibold tabular-nums text-stone-100">
               {chf(totals?.value ?? null)}{" "}
               <span className="text-base font-normal text-stone-500">CHF</span>
             </div>
@@ -167,21 +164,14 @@ export default function PortfolioTable() {
             <Metric
               label="Ø KGV"
               value={totals?.portfolioPE == null ? "NA" : totals.portfolioPE.toFixed(1)}
+              valueClass={peClass(totals?.portfolioPE ?? null)}
             />
             <Metric
               label="Div.-Rendite"
-              value={
-                totals?.portfolioDY == null
-                  ? "NA"
-                  : totals.portfolioDY.toFixed(2) + "%"
-              }
-              sub={
-                totals?.dividends != null
-                  ? new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 }).format(
-                      totals.dividends
-                    ) + " CHF/J."
-                  : undefined
-              }
+              value={totals?.portfolioDY == null ? "NA" : totals.portfolioDY.toFixed(2) + "%"}
+              sub={totals?.dividends != null
+                ? new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 }).format(totals.dividends) + " CHF/J."
+                : undefined}
             />
             <Metric
               label="Perf. 1J"
@@ -197,77 +187,67 @@ export default function PortfolioTable() {
           <button
             onClick={load}
             disabled={loading}
-            className="rounded-sm border border-stone-900 bg-stone-900 px-4 py-1.5 text-stone-50 hover:bg-stone-700 disabled:opacity-50"
+            className="rounded-sm border border-stone-700 bg-stone-900 px-4 py-1.5 text-stone-200 hover:bg-stone-800 disabled:opacity-40 transition-colors"
           >
             {loading ? "Laden…" : "Update"}
           </button>
-          <span className="text-stone-500">
+          <span className="text-stone-600">
             Quelle:{" "}
-            <span className={source === "yahoo" ? "text-emerald-700" : "text-stone-700"}>
-              {source === "yahoo" ? "Yahoo Finance (live)" : "Mock (deterministisch)"}
+            <span className={source === "yahoo" ? "text-emerald-400" : "text-stone-400"}>
+              {source === "yahoo" ? "Yahoo Finance" : "Mock"}
             </span>
             {stamp && <> · {stamp.toLocaleString("de-CH")}</>}
           </span>
           {data?.refISO && (
-            <span className="text-stone-400 text-[12px]">Stichtag: {data.refISO}</span>
+            <span className="text-stone-700 text-[12px]">Stichtag: {data.refISO}</span>
           )}
         </div>
 
-        {source === "yahoo" && (
-          <div className="mt-3 rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900">
-            Echtzeitdaten via Yahoo Finance — kein API-Key erforderlich.
-          </div>
-        )}
+        {/* KGV-Legende */}
+        <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
+          <span className="text-stone-600">KGV:</span>
+          <span className="text-emerald-300 font-semibold">&lt;10 sehr günstig</span>
+          <span className="text-emerald-400">10–15 günstig</span>
+          <span className="text-stone-400">15–20 fair</span>
+          <span className="text-amber-400">20–30 teuer</span>
+          <span className="text-red-400">&gt;30 sehr teuer</span>
+        </div>
 
         {/* Tabelle */}
-        <div className="mt-4 overflow-x-auto rounded-sm border border-stone-200 bg-white">
+        <div className="mt-4 overflow-x-auto rounded-sm border border-stone-800 bg-stone-900">
           <table className="w-full text-[13px]">
             <thead>
-              <tr className="border-b border-stone-300 text-[11px] uppercase tracking-wide text-stone-500">
+              <tr className="border-b border-stone-700 text-[11px] uppercase tracking-wide text-stone-600">
                 <Th left>Symbol / Titel</Th>
-                <Th>Menge</Th>
-                <Th>Kurs</Th>
-                <Th>Wert CHF</Th>
-                <Th>KGV</Th>
-                <Th>ROIC</Th>
-                <Th>Div %</Th>
-                <Th>1M</Th>
-                <Th>3M</Th>
-                <Th>1J</Th>
-                <Th>3J</Th>
+                <Th>Menge</Th><Th>Kurs</Th><Th>Wert CHF</Th>
+                <Th>KGV</Th><Th>ROIC</Th><Th>Div %</Th>
+                <Th>1M</Th><Th>3M</Th><Th>1J</Th><Th>3J</Th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <RowTr key={r.isin} r={r} />
-              ))}
+              {rows.map((r) => <RowTr key={r.isin} r={r} />)}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-stone-300 bg-stone-50 font-semibold">
-                <td className="px-2 py-2">Total Portfolio</td>
-                <td></td>
-                <td></td>
-                <td className="px-2 py-2 text-right tabular-nums">{chf(totals?.value ?? null)}</td>
-                <td className="px-2 py-2 text-right tabular-nums">
+              <tr className="border-t-2 border-stone-700 bg-stone-950 font-semibold">
+                <td className="px-2 py-2 text-stone-300">Total Portfolio</td>
+                <td></td><td></td>
+                <td className="px-2 py-2 text-right tabular-nums text-stone-100">{chf(totals?.value ?? null)}</td>
+                <td className={`px-2 py-2 text-right tabular-nums ${peClass(totals?.portfolioPE ?? null)}`}>
                   {totals?.portfolioPE == null ? NA : totals.portfolioPE.toFixed(1)}
                 </td>
                 <td></td>
-                <td className="px-2 py-2 text-right tabular-nums">
+                <td className="px-2 py-2 text-right tabular-nums text-stone-300">
                   {totals?.portfolioDY == null ? NA : totals.portfolioDY.toFixed(2) + "%"}
                 </td>
-                {HORIZONS.map((h) => (
-                  <PerfCellTd key={h} cell={totals?.totalPerf[h] ?? null} />
-                ))}
+                {HORIZONS.map((h) => <PerfCellTd key={h} cell={totals?.totalPerf[h] ?? null} />)}
               </tr>
             </tfoot>
           </table>
         </div>
 
-        <div className="mt-4 text-[11px] text-stone-400">
-          Alle Beträge in CHF. Fehlende Werte werden als NA angezeigt – keine Schätzung.
-          {data?.fetchedAt && (
-            <> Datenabruf: {new Date(data.fetchedAt).toLocaleString("de-CH")}.</>
-          )}
+        <div className="mt-3 text-[11px] text-stone-700">
+          Alle Beträge in CHF · Monatliche Schlusskurse · Fehlende Werte = NA
+          {data?.fetchedAt && <> · {new Date(data.fetchedAt).toLocaleString("de-CH")}</>}
         </div>
       </div>
     </div>
