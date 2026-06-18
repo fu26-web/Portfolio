@@ -211,14 +211,15 @@ async function yahooFetch(holding: Holding, refISO: string): Promise<RawHoldingD
   const fxTicker = holding.currency === "CHF" ? null : `${holding.currency}CHF=X`;
 
   try {
+    const moduleOpts = { validateResult: false } as const;
     const [pxRaw, fxRaw, summary] = await Promise.all([
-      yahooFinance.historical(holding.ticker, { period1: from, period2: to, interval: "1d" }, ),
+      yahooFinance.historical(holding.ticker, { period1: from, period2: to, interval: "1d" }, moduleOpts),
       fxTicker
-        ? yahooFinance.historical(fxTicker, { period1: from, period2: to, interval: "1d" }, )
+        ? yahooFinance.historical(fxTicker, { period1: from, period2: to, interval: "1d" }, moduleOpts)
         : Promise.resolve(null),
       (yahooFinance.quoteSummary(holding.ticker, {
         modules: ["summaryDetail", "financialData"],
-      }, ) as Promise<unknown>).catch(() => null),
+      }, moduleOpts) as Promise<unknown>).catch(() => null),
     ]);
 
     // Normalize to { date: "YYYY-MM-DD", close: number }[]
