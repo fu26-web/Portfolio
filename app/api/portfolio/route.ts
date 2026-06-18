@@ -61,7 +61,8 @@ interface Holding {
   quantity: number;
 }
 
-const HOLDINGS: Holding[] = [
+// Fallback-Holdings (verwendet wenn kein Google Sheet konfiguriert)
+const FALLBACK_HOLDINGS: Holding[] = [
   { isin: "DE0008404005", ticker: "ALV.DE",  name: "Allianz SE",             currency: "EUR", quantity: 18  },
   { isin: "DE0005659700", ticker: "EUZ.DE",  name: "Eckert & Ziegler SE",    currency: "EUR", quantity: 60  },
   { isin: "US02079K3059", ticker: "GOOGL",   name: "Alphabet Inc.",          currency: "USD", quantity: 108 },
@@ -82,6 +83,41 @@ const HOLDINGS: Holding[] = [
   { isin: "DE0007236101", ticker: "SIE.DE",  name: "Siemens AG",             currency: "EUR", quantity: 14  },
   { isin: "FR0000120578", ticker: "SAN.PA",  name: "Sanofi SA",              currency: "EUR", quantity: 30  },
 ];
+
+// ---- Google Sheets loader ---------------------------------------------------
+// Sheet muss öffentlich lesbar sein (Freigabe: "Jeder mit Link → Betrachter").
+// Erwartete Spaltenreihenfolge: ISIN | Ticker | Name | Currency | Quantity
+// (erste Zeile = Header, wird übersprungen)
+
+function parseSheetCSV(csv: string): Holding[] {
+  const lines = csv.trim().split("\n").slice(1); // Header überspringen
+  const holdings: Holding[] = [];
+  for (const line of lines) {
+    const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+    const [isin, ticker, name, currency, qty] = cols;
+    if (!ticker || !currency) continue;
+    const quantity = Number(qty);
+    if (!isFinite(quantity) || quantity <= 0) continue;
+    holdings.push({ isin: isin ?? "", ticker, name: name ?? ticker, currency, quantity });
+  }
+  return holdings;
+}
+
+async function loadHoldings(): Promise<Holding[]> {
+  const sheetId = process.env.GOOGLE_SHEET_ID;
+  if (!sheetId) return FALLBACK_HOLDINGS;
+  const gid = process.env.GOOGLE_SHEET_GID ?? "0";
+  const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 300 } }); // 5 min Cache
+    if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
+    const csv = await res.text();
+    const holdings = parseSheetCSV(csv);
+    return holdings.length > 0 ? holdings : FALLBACK_HOLDINGS;
+  } catch {
+    return FALLBACK_HOLDINGS;
+  }
+}
 
 const HORIZONS = ["1M", "3M", "1Y", "3Y"] as const;
 type Horizon = (typeof HORIZONS)[number];
@@ -367,11 +403,11 @@ function computeTotals(rows: PortfolioRow[]): PortfolioTotals {
 const REF_ISO = "2026-06-17";
 
 export async function GET(): Promise<NextResponse<PortfolioResponse>> {
-  // USE_MOCK=true forces mock mode (e.g. for offline development/testing)
   const useMock = process.env.USE_MOCK === "true";
+  const holdings = await loadHoldings();
 
   const raw: RawHoldingData[] = await Promise.all(
-    HOLDINGS.map((h) =>
+    holdings.map((h) =>
       useMock ? Promise.resolve(mockFetch(h, REF_ISO)) : yahooFetch(h, REF_ISO)
     )
   );
