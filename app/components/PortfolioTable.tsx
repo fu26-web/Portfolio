@@ -203,8 +203,8 @@ export default function PortfolioTable() {
           </button>
           <span className="text-stone-500">
             Quelle:{" "}
-            <span className={source === "eodhd" ? "text-amber-700" : "text-stone-700"}>
-              {source === "eodhd" ? "EODHD (live)" : "Mock (deterministisch)"}
+            <span className={source === "yahoo" ? "text-emerald-700" : "text-stone-700"}>
+              {source === "yahoo" ? "Yahoo Finance (live)" : "Mock (deterministisch)"}
             </span>
             {stamp && <> · {stamp.toLocaleString("de-CH")}</>}
           </span>
@@ -213,9 +213,9 @@ export default function PortfolioTable() {
           )}
         </div>
 
-        {source === "eodhd" && (
-          <div className="mt-3 rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-            Daten werden serverseitig via EODHD geladen. Der API-Token ist nur im Server sichtbar.
+        {source === "yahoo" && (
+          <div className="mt-3 rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900">
+            Echtzeitdaten via Yahoo Finance — kein API-Key erforderlich.
           </div>
         )}
 

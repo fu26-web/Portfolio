@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import yahooFinance from "yahoo-finance2";
 
 // ---- Types ------------------------------------------------------------------
 
 export interface PricePoint {
   value: number | null;
   asOf: string;
-  source: "eodhd" | "mock";
+  source: "yahoo" | "mock";
 }
 
 export interface PerfCell {
@@ -42,11 +43,11 @@ export interface PortfolioResponse {
   rows: PortfolioRow[];
   totals: PortfolioTotals;
   refISO: string;
-  source: "eodhd" | "mock";
+  source: "yahoo" | "mock";
   fetchedAt: string;
 }
 
-// ---- Holdings (single source of truth) -------------------------------------
+// ---- Holdings ---------------------------------------------------------------
 
 interface Holding {
   isin: string;
@@ -62,7 +63,7 @@ const HOLDINGS: Holding[] = [
   { isin: "US02079K3059", ticker: "GOOGL",   name: "Alphabet Inc.",          currency: "USD", quantity: 108 },
   { isin: "DE0008402215", ticker: "HNR1.DE", name: "Hannover Rück SE",       currency: "EUR", quantity: 40  },
   { isin: "US5949181045", ticker: "MSFT",    name: "Microsoft Corp.",        currency: "USD", quantity: 31  },
-  { isin: "CH0012032048", ticker: "RO.SW",   name: "Roche Holding AG",       currency: "CHF", quantity: 40  },
+  { isin: "CH0012032048", ticker: "ROG.SW",  name: "Roche Holding AG",       currency: "CHF", quantity: 40  },
   { isin: "DE0007164600", ticker: "SAP.DE",  name: "SAP SE",                 currency: "EUR", quantity: 20  },
   { isin: "CH0008742519", ticker: "SCMN.SW", name: "Swisscom AG",            currency: "CHF", quantity: 18  },
   { isin: "CH0126881561", ticker: "SREN.SW", name: "Swiss Re AG",            currency: "CHF", quantity: 30  },
@@ -81,7 +82,7 @@ const HOLDINGS: Holding[] = [
 const HORIZONS = ["1M", "3M", "1Y", "3Y"] as const;
 type Horizon = (typeof HORIZONS)[number];
 
-// ---- Stichtage -------------------------------------------------------------
+// ---- Stichtage --------------------------------------------------------------
 
 function horizonDates(refISO: string): Record<string, string> {
   const ref = new Date(refISO + "T00:00:00Z");
@@ -93,7 +94,7 @@ function horizonDates(refISO: string): Record<string, string> {
   return { now: refISO, "1M": shift(1), "3M": shift(3), "1Y": shift(12), "3Y": shift(36) };
 }
 
-// ---- Mock adapter ----------------------------------------------------------
+// ---- Mock adapter -----------------------------------------------------------
 
 const MOCK_FX_NOW: Record<string, number> = { EUR: 0.935, USD: 0.885, CHF: 1 };
 const MOCK_FX_DRIFT: Record<string, number> = { "1M": 0.004, "3M": 0.012, "1Y": -0.02, "3Y": -0.06 };
@@ -104,7 +105,7 @@ const MOCK_DATA: Record<string, { px: number; pe: number | null; roic: number | 
   "GOOGL":   { px: 365.8,  pe: 27.9, roic: 28.4, dy: 0.24 },
   "HNR1.DE": { px: 244.0,  pe: 9.6,  roic: 11.2, dy: 5.55 },
   "MSFT":    { px: 423.0,  pe: 22.8, roic: 32.1, dy: 0.92 },
-  "RO.SW":   { px: 333.0,  pe: 20.8, roic: null, dy: 2.97 },
+  "ROG.SW":  { px: 333.0,  pe: 20.8, roic: null, dy: 2.97 },
   "SAP.DE":  { px: 233.0,  pe: 22.4, roic: null, dy: 1.67 },
   "SCMN.SW": { px: 668.0,  pe: 28.5, roic: null, dy: 3.82 },
   "SREN.SW": { px: 138.0,  pe: 9.8,  roic: 9.8,  dy: 5.90 },
@@ -136,14 +137,14 @@ function mockReturn(ticker: string, h: string): number {
 }
 
 interface RawHoldingData {
+  isin: string;
   ticker: string;
   name: string;
   currency: string;
   quantity: number;
-  isin: string;
   price: PricePoint | null;
   history: Record<string, { value: number; asOf: string } | null>;
-  fxNow: { value: number | null; asOf: string; source: "eodhd" | "mock" } | null;
+  fxNow: { value: number | null; asOf: string; source: "yahoo" | "mock" } | null;
   fxHistory: Record<string, { value: number; asOf: string } | null>;
   pe: number | null;
   roic: number | null;
@@ -183,7 +184,7 @@ function mockFetch(holding: Holding, refISO: string): RawHoldingData {
   };
 }
 
-// ---- EODHD adapter ---------------------------------------------------------
+// ---- Yahoo Finance adapter --------------------------------------------------
 
 interface EodRow { date: string; close: number }
 
@@ -199,36 +200,41 @@ function closeOnOrBefore(
   return hit ? { value: hit.close, asOf: hit.date } : null;
 }
 
-async function eodhdFetch(holding: Holding, refISO: string, token: string): Promise<RawHoldingData> {
-  const apiBase = "https://eodhd.com/api";
+async function yahooFetch(holding: Holding, refISO: string): Promise<RawHoldingData> {
   const dates = horizonDates(refISO);
-  const from = dates["3Y"];
-
-  const j = async <T>(url: string): Promise<T> => {
-    const sep = url.includes("?") ? "&" : "?";
-    const res = await fetch(`${url}${sep}api_token=${token}&fmt=json`, {
-      next: { revalidate: 3600 },
-    });
-    if (!res.ok) throw new Error(`EODHD ${res.status} – ${url}`);
-    return res.json() as Promise<T>;
-  };
+  const from = new Date(dates["3Y"] + "T00:00:00Z");
+  const to   = new Date(refISO + "T23:59:59Z");
+  const fxTicker = holding.currency === "CHF" ? null : `${holding.currency}CHF=X`;
 
   try {
-    const [px, fx, fund] = await Promise.all([
-      j<EodRow[]>(`${apiBase}/eod/${holding.ticker}?from=${from}&to=${refISO}`),
-      holding.currency === "CHF"
-        ? Promise.resolve<EodRow[] | null>(null)
-        : j<EodRow[]>(`${apiBase}/eod/${holding.currency}CHF.FOREX?from=${from}&to=${refISO}`),
-      j<Record<string, unknown>>(`${apiBase}/fundamentals/${holding.ticker}`).catch(() => null),
+    const [pxRaw, fxRaw, summary] = await Promise.all([
+      yahooFinance.historical(holding.ticker, { period1: from, period2: to, interval: "1d" }, { suppressNotices: true }),
+      fxTicker
+        ? yahooFinance.historical(fxTicker, { period1: from, period2: to, interval: "1d" }, { suppressNotices: true })
+        : Promise.resolve(null),
+      (yahooFinance.quoteSummary(holding.ticker, {
+        modules: ["summaryDetail", "financialData"],
+      }, { suppressNotices: true }) as Promise<unknown>).catch(() => null),
     ]);
+
+    // Normalize to { date: "YYYY-MM-DD", close: number }[]
+    const toSeries = (rows: { date: Date; adjClose?: number | null; close?: number | null }[]): EodRow[] =>
+      rows
+        .map((r) => ({
+          date:  r.date.toISOString().slice(0, 10),
+          close: r.adjClose ?? r.close ?? 0,
+        }))
+        .filter((r) => r.close > 0)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    const px = toSeries(pxRaw);
+    const fx = fxRaw ? toSeries(fxRaw) : null;
 
     const pxNow = closeOnOrBefore(px, refISO);
     const fxVal = (d: string) =>
       holding.currency === "CHF"
         ? { value: 1, asOf: d }
-        : fx
-        ? closeOnOrBefore(fx, d)
-        : null;
+        : fx ? closeOnOrBefore(fx, d) : null;
 
     const history: Record<string, { value: number; asOf: string } | null> = {};
     const fxHistory: Record<string, { value: number; asOf: string } | null> = {};
@@ -237,23 +243,29 @@ async function eodhdFetch(holding: Holding, refISO: string, token: string): Prom
       fxHistory[h] = fxVal(dates[h]);
     }
 
-    const hi = (fund as Record<string, Record<string, unknown>> | null)?.Highlights ?? {};
+    type SummaryResult = { summaryDetail?: Record<string, unknown>; financialData?: Record<string, unknown> };
+    const s = summary as SummaryResult | null;
+    const sd = s?.summaryDetail ?? {};
+    const fd = s?.financialData ?? {};
     const num = (v: unknown): number | null =>
       typeof v === "number" && isFinite(v) ? v : null;
 
-    const rawDY = hi.DividendYield;
-    const dividendYield =
-      rawDY != null && typeof rawDY === "number" ? rawDY * 100 : null;
+    // dividendYield from Yahoo is already a fraction (e.g. 0.05 = 5%)
+    const rawDY = (sd as Record<string, unknown>).dividendYield;
+    const dividendYield = num(rawDY) != null ? (rawDY as number) * 100 : null;
+
+    // ROIC: Yahoo financialData has returnOnCapital (often null), fallback null → honest NA
+    const roic = num((fd as Record<string, unknown>).returnOnCapital) ??
+                 num((fd as Record<string, unknown>).returnOnEquity);
 
     return {
       ...holding,
-      name: (fund as Record<string, Record<string, unknown>> | null)?.General?.Name as string ?? holding.name,
-      price:   pxNow ? { ...pxNow, source: "eodhd" } : { value: null, asOf: refISO, source: "eodhd" },
+      price:   pxNow ? { ...pxNow, source: "yahoo" } : { value: null, asOf: refISO, source: "yahoo" },
       history,
-      fxNow:   { ...(fxVal(refISO) ?? { value: null, asOf: refISO }), source: "eodhd" },
+      fxNow:   { ...(fxVal(refISO) ?? { value: null, asOf: refISO }), source: "yahoo" },
       fxHistory,
-      pe:            num(hi.PERatio),
-      roic:          num(hi.ReturnOnInvestmentTTM ?? hi.ROIC ?? null),
+      pe:            num((sd as Record<string, unknown>).trailingPE),
+      roic,
       dividendYield,
       error:         null,
     };
@@ -334,8 +346,8 @@ function computeTotals(rows: PortfolioRow[]): PortfolioTotals {
       }
     }
   }
-  const portfolioPE   = earnings > 0 ? value / earnings : null;
-  const portfolioDY   = value > 0 ? (dividends / value) * 100 : null;
+  const portfolioPE = earnings > 0 ? value / earnings : null;
+  const portfolioDY = value > 0 ? (dividends / value) * 100 : null;
   const totalPerf = Object.fromEntries(
     HORIZONS.map((h) => {
       const { now, then } = perf[h];
@@ -345,28 +357,28 @@ function computeTotals(rows: PortfolioRow[]): PortfolioTotals {
   return { value, portfolioPE, portfolioDY, dividends, totalPerf };
 }
 
-// ---- Route handler ---------------------------------------------------------
+// ---- Route handler ----------------------------------------------------------
 
 const REF_ISO = "2026-06-17";
 
 export async function GET(): Promise<NextResponse<PortfolioResponse>> {
-  const token = process.env.EODHD_TOKEN ?? "";
-  const useLive = token.length > 0;
+  // USE_MOCK=true forces mock mode (e.g. for offline development/testing)
+  const useMock = process.env.USE_MOCK === "true";
 
   const raw: RawHoldingData[] = await Promise.all(
     HOLDINGS.map((h) =>
-      useLive ? eodhdFetch(h, REF_ISO, token) : Promise.resolve(mockFetch(h, REF_ISO))
+      useMock ? Promise.resolve(mockFetch(h, REF_ISO)) : yahooFetch(h, REF_ISO)
     )
   );
 
-  const rows = raw.map(computeRow);
+  const rows   = raw.map(computeRow);
   const totals = computeTotals(rows);
 
   return NextResponse.json({
     rows,
     totals,
     refISO: REF_ISO,
-    source: useLive ? "eodhd" : "mock",
+    source: useMock ? "mock" : "yahoo",
     fetchedAt: new Date().toISOString(),
   });
 }
