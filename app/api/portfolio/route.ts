@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import yahooFinance from "yahoo-finance2";
+import YahooFinanceDefault from "yahoo-finance2";
+// yahoo-finance2 v3: instantiate once, suppress deprecation notice for historical()
+const yahooFinance = new YahooFinanceDefault({
+  suppressNotices: ["ripHistorical"],
+});
 
 // ---- Types ------------------------------------------------------------------
 
@@ -208,13 +212,13 @@ async function yahooFetch(holding: Holding, refISO: string): Promise<RawHoldingD
 
   try {
     const [pxRaw, fxRaw, summary] = await Promise.all([
-      yahooFinance.historical(holding.ticker, { period1: from, period2: to, interval: "1d" }, { suppressNotices: true }),
+      yahooFinance.historical(holding.ticker, { period1: from, period2: to, interval: "1d" }, ),
       fxTicker
-        ? yahooFinance.historical(fxTicker, { period1: from, period2: to, interval: "1d" }, { suppressNotices: true })
+        ? yahooFinance.historical(fxTicker, { period1: from, period2: to, interval: "1d" }, )
         : Promise.resolve(null),
       (yahooFinance.quoteSummary(holding.ticker, {
         modules: ["summaryDetail", "financialData"],
-      }, { suppressNotices: true }) as Promise<unknown>).catch(() => null),
+      }, ) as Promise<unknown>).catch(() => null),
     ]);
 
     // Normalize to { date: "YYYY-MM-DD", close: number }[]
