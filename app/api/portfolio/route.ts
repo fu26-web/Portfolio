@@ -213,9 +213,9 @@ async function yahooFetch(holding: Holding, refISO: string): Promise<RawHoldingD
   try {
     const moduleOpts = { validateResult: false } as const;
     const [pxRaw, fxRaw, summary] = await Promise.all([
-      yahooFinance.historical(holding.ticker, { period1: from, period2: to, interval: "1d" }, moduleOpts),
+      yahooFinance.historical(holding.ticker, { period1: from, period2: to, interval: "1mo" }, moduleOpts),
       fxTicker
-        ? yahooFinance.historical(fxTicker, { period1: from, period2: to, interval: "1d" }, moduleOpts)
+        ? yahooFinance.historical(fxTicker, { period1: from, period2: to, interval: "1mo" }, moduleOpts)
         : Promise.resolve(null),
       (yahooFinance.quoteSummary(holding.ticker, {
         modules: ["summaryDetail", "financialData"],
